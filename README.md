@@ -22,7 +22,7 @@ Fork 本仓库后，在 Cloudflare Dashboard 的 **Workers & Pages** 中依次�
 
 ### 可选：配置 Cloudflare TURN
 
-未配置 TURN 时，应用仍会使用公共 STUN 尝试直连；如需在受限网络中使用中继，请先在 Cloudflare Dashboard 的 **Realtime** → **TURN** 创建凭证，然后在已部署 Worker 的 **Settings** → **Variables and Secrets** 中添加两个 **Secret**：
+未配置 TURN 时，应用仍会使用公共 STUN 尝试直连；如需在受限网络中使用中继，请先在 Cloudflare Dashboard 的 **Realtime** → **TURN** 创建凭证，然后在已部署 Worker 的 **Settings** → **Variables and Secrets** 中添加两个 **Secret**：    
 
 | 名称 | 值 |
 | --- | --- |
