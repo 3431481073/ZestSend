@@ -2816,7 +2816,10 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
   // ?auto=1 —— 手机端唤起用：自动接受 + 收完自动全屏播放，用户点完卡片之后零操作。
   // 手动流程（4 位房间号，不带这个参数）完全不受影响。
   const search = useSearch({ strict: false }) as Record<string, unknown>;
-  const autoMode = search?.auto === "1";
+  // ⚠️ 不能写 search?.auto === "1"：TanStack Router 的默认 parseSearch 会对每个值
+  //    跑一次 JSON.parse，`?auto=1` 得到的是【数字 1】，不是字符串 "1"。
+  //    实测 ?auto=1 不生效、?auto=%221%22 才生效 —— 所以这里做类型归一。
+  const autoMode = String(search?.auto ?? "") === "1";
   const [dialogPhase, setDialogPhase] = useState<"connecting" | "closing-for-full" | "closing-for-leave" | "closing-for-ready" | "closing-for-reconnect" | "full" | "ready">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [connectionRoute, setConnectionRoute] = useState<ConnectionRoute>("direct");
