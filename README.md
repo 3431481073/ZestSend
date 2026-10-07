@@ -1,6 +1,6 @@
 # ZestSend
 
-ZestSend 是一个开源的 WebRTC 点对点连接网页工具，可自行部署在 Cloudflare 上。   
+ZestSend 是一个开源的 WebRTC 点对点连接网页工具，可自行部署在 Cloudflare 上。      
 
 支持端对端加密的匿名实时聊天、文件互传、语音通话、视频通话、屏幕共享、同播共享、文本协作、画板等功能，支持点对点直连或 Cloudflare TURN 中转。
 
