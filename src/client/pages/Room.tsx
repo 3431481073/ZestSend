@@ -61,7 +61,7 @@ import {
   RiZoomInLine,
 } from "@remixicon/react";
 import NumberFlow, { NumberFlowGroup } from "@number-flow/react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import cuid from "cuid";
 import { AnimatePresence, motion } from "framer-motion";
 import { type CSSProperties, type DragEventHandler, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -2311,6 +2311,7 @@ function FileWorkspace({ accent, files, locale, onAccept, onCancel, onDelete, on
 }
 
 function RoomWorkspace({
+  autoMode,
   chatMessages,
   canvasHasContent,
   collaborationProvider,
@@ -2428,11 +2429,13 @@ function RoomWorkspace({
   onSendChatMessage: (text: string) => boolean;
   voiceActive: boolean;
   videoActive: boolean;
+  autoMode: boolean;
 }) {
   const copy = roomCopy[locale];
   const { theme } = useTheme();
   const workspace = workspaceCopy[locale];
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId | null>(() => workspaceFromHash());
+  // auto 模式（手机端）直接落在 files 面板 —— 用户点完卡片不该再去面板里找。
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId | null>(() => (autoMode ? "files" : workspaceFromHash()));
   const [focusedVideoTileId, setFocusedVideoTileId] = useState<VideoTile["id"] | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [isExitDialogOpen, setExitDialogOpen] = useState(false);
@@ -2447,10 +2450,11 @@ function RoomWorkspace({
   }, []);
 
   useEffect(() => {
+    if (autoMode) return; // auto 模式锁在 files 面板，不让 hash 把它顶走
     const syncWorkspaceFromHash = () => setActiveWorkspace(workspaceFromHash());
     window.addEventListener("hashchange", syncWorkspaceFromHash);
     return () => window.removeEventListener("hashchange", syncWorkspaceFromHash);
-  }, []);
+  }, [autoMode]);
 
   useEffect(() => {
     const newMessages = chatMessages.slice(observedChatMessageCount.current);
@@ -2809,11 +2813,16 @@ function RoomFullContent({ locale, onLeave, roomId }: { locale: RoomLocale; onLe
 
 export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: string }) {
   const navigate = useNavigate();
+  // ?auto=1 —— 手机端唤起用：自动接受 + 收完自动全屏播放，用户点完卡片之后零操作。
+  // 手动流程（4 位房间号，不带这个参数）完全不受影响。
+  const search = useSearch({ strict: false }) as Record<string, unknown>;
+  const autoMode = search?.auto === "1";
   const [dialogPhase, setDialogPhase] = useState<"connecting" | "closing-for-full" | "closing-for-leave" | "closing-for-ready" | "closing-for-reconnect" | "full" | "ready">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [connectionRoute, setConnectionRoute] = useState<ConnectionRoute>("direct");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [fileTransfers, setFileTransfers] = useState<FileTransferSnapshot[]>([]);
+  const [autoPlayUrl, setAutoPlayUrl] = useState<string | null>(null);
   const usedFeaturesRef = useRef(new Set<MeasuredFeature>());
   const [canvasHasContent, setCanvasHasContent] = useState(false);
   const [collaborationProvider, setCollaborationProvider] = useState<P2PCollaborationProvider | null>(null);
@@ -2993,6 +3002,8 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
       },
       sendBulk: (data) => sessionRef.current?.sendBulk(data) ?? false,
       sendControl: (message) => sessionRef.current?.sendControlMessage(message) ?? false,
+      // auto 模式不弹下载框：收完由下面的全屏 <video> 播，用户不用去点「保存」。
+      suppressAutoDownload: () => autoMode,
     });
     fileManagerRef.current = manager;
     return () => {
@@ -3004,7 +3015,7 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
       completedTransferIdsRef.current.clear();
       setFileTransfers([]);
     };
-  }, [roomId]);
+  }, [roomId, autoMode]);
 
   const updateChatMessages = (update: (messages: ChatMessage[]) => ChatMessage[]) => {
     setChatMessages((current) => {
@@ -3492,6 +3503,25 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
     };
   }, [roomId]);
 
+  // ── auto 模式：收到 offer 立刻接受，不等用户点「接收」──────────────
+  useEffect(() => {
+    if (!autoMode) return;
+    for (const file of fileTransfers) {
+      if (file.direction === "incoming" && file.state === "offered") {
+        void fileManagerRef.current?.acceptFile(file.id);
+      }
+    }
+  }, [autoMode, fileTransfers]);
+
+  // ── auto 模式：收完立刻拿 blob URL 全屏播，不等用户点「查看」────────
+  useEffect(() => {
+    if (!autoMode || autoPlayUrl) return;
+    const done = fileTransfers.find(
+      (file) => file.direction === "incoming" && file.state === "complete" && Boolean(file.url),
+    );
+    if (done?.url) setAutoPlayUrl(done.url);
+  }, [autoMode, autoPlayUrl, fileTransfers]);
+
   const leave = () => {
     disposePeerSessionScope();
     sessionRef.current?.close();
@@ -3973,6 +4003,7 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
           collaborationProvider={collaborationProvider}
           collaborationPeerCursor={collaborationPeerCursor}
           fileTransfers={fileTransfers}
+          autoMode={autoMode}
           locale={locale}
           onFeatureUsed={reportFeatureUsage}
           onLeave={leave}
@@ -4041,6 +4072,12 @@ export default function Room({ locale, roomId }: { locale: RoomLocale; roomId: s
           roomId={roomId}
         />
       )}
+      {/* auto 模式：收完直接压在整页上面播，用户不需要再点任何东西 */}
+      {autoPlayUrl ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black">
+          <video autoPlay className="h-full w-full" controls playsInline src={autoPlayUrl} />
+        </div>
+      ) : null}
       </div>
     </Layout>
   );

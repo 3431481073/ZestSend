@@ -77,8 +77,12 @@ app.get("/", (context) => {
 app.get("/en", (context) => localizedResponse(context.req.raw, "en", context.env.ASSETS));
 app.get("/zh", (context) => localizedResponse(context.req.raw, "zh", context.env.ASSETS));
 
+// 房间号两种形态：4 位数字（原有手动流程）与 record_id（手机端自动配对用）。
+// 后者是 rec_ + 32 位小写 hex，与 AI_ask 产出的 record_id 同形。
+const ROOM_ID_RE = /^(?:\d{4}|rec_[0-9a-f]{32})$/;
+
 function roomIsValid(roomId: string | undefined): roomId is string {
-  return /^\d{4}$/.test(roomId ?? "");
+  return ROOM_ID_RE.test(roomId ?? "");
 }
 
 function roomFor(env: ApiBindings, roomId: string) {
@@ -121,7 +125,12 @@ app.get("/api/rooms/:roomId/ws", async (context) => {
 });
 
 app.post("/api/turn/credentials", async (context) => {
-  if (!context.env.TURN_ID || !context.env.TURN_TOKEN) {
+  // trim 后再判空：从 Dashboard 粘贴凭据时很容易带进尾随换行/空格，
+  // 那种值会让 URL 变成 /keys/<id>%0A/credentials/...，Cloudflare 只回 4xx，
+  // 而日志里只有 status，看不出根因是空格。
+  const turnId = context.env.TURN_ID?.trim();
+  const turnToken = context.env.TURN_TOKEN?.trim();
+  if (!turnId || !turnToken) {
     return context.json(
       {
         error: "TURN credentials are not configured.",
@@ -131,14 +140,15 @@ app.post("/api/turn/credentials", async (context) => {
     );
   }
 
-  const body = await context.req.json<{ ttl?: number }>();
+  // 空 body 是合法调用（只要默认 ttl），不该因为 JSON.parse("") 变成 500。
+  const body = await context.req.json<{ ttl?: number }>().catch(() => ({} as { ttl?: number }));
   const ttl = Math.min(Math.max(body.ttl ?? 86_400, 60), 86_400);
   const response = await fetch(
-    `https://rtc.live.cloudflare.com/v1/turn/keys/${context.env.TURN_ID}/credentials/generate-ice-servers`,
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${turnId}/credentials/generate-ice-servers`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${context.env.TURN_TOKEN}`,
+        Authorization: `Bearer ${turnToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ttl }),
@@ -162,6 +172,11 @@ app.all("/api/turn/credentials", () => methodNotAllowed("Method not allowed"));
 
 app.onError((error, context) => {
   console.error(JSON.stringify({ event: "api_error", path: context.req.path, message: error.message }));
+  // 请求体不是合法 JSON 是调用方的问题，回 400。不回 500 ——
+  // 否则「你没带 body」和「服务端真的炸了」在日志和响应里分不开。
+  if (error instanceof SyntaxError) {
+    return context.json({ message: "invalid JSON body" }, 400);
+  }
   return context.json({ message: "服务器错误" }, 500);
 });
 

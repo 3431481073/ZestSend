@@ -116,6 +116,8 @@ type FileTransferCallbacks = {
   onOffer: (file: FileTransferSnapshot) => void;
   onError: (id: string, error: string) => void;
   onRemove?: (id: string) => void;
+  // auto 模式（手机端）返回 true：收完不触发 <a download> 点击，改由页内直接播。
+  suppressAutoDownload?: () => boolean;
 };
 
 type FileSystemWritableFileStream = {
@@ -822,7 +824,7 @@ export class FileTransferManager {
         }
         record.url = url;
         this.callbacks.sendControl({ type: "FILE_ACK", transferId: record.id });
-        this.downloadFile(record.id);
+        if (!this.callbacks.suppressAutoDownload?.()) this.downloadFile(record.id);
       }
       this.emit(record);
     }).catch((error) => {
