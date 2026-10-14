@@ -1,0 +1,5 @@
+# §4 常驻服务声明
+# 理由：本项目无本地常驻服务。生产形态是 Cloudflare 上的无服务器 Worker `zestsend`
+# （+ Durable Object `Room`），由 Cloudflare 拉起与守护，本地只在开发时用
+# `pnpm dev` 临时监听 8787，不常驻、无需开机自启、无需 svcmgr 注册。
+services: []
